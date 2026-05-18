@@ -40,6 +40,18 @@ The result dict contains:
 - `maps` (list[np.ndarray]) — one TAM activation map per generated token.
 - `tokens` (list[int]) — generated token ids (prompt trimmed).
 
+## Model cache location (`HF_HOME`)
+
+Importing `tamart` (or any submodule) automatically sets `HF_HOME` so all downloaded weights and Hugging Face caches land under `data/hf/` at the repo root. The default lives in `.env` at the repo root — edit it to change the path:
+
+```
+HF_HOME=data/hf
+```
+
+Relative paths in `.env` are resolved against the repo root, and `~` is expanded, so the location is stable no matter where you run scripts from. `.env` overrides any shell-level `HF_HOME` — if you want a different cache for a particular run, edit `.env`.
+
+**Notebooks:** put `import tamart` at the top *before* any `import transformers` / `from huggingface_hub import ...`. HF libraries read `HF_HOME` at their own import time, so the bootstrap has to run first.
+
 ## Supported MLLMs
 
 Currently only **Qwen2-VL** (any size). LLaVA and InternVL3 are upstream-supported by the underlying `TAM` function but not wired into `TAMExplainer` yet.

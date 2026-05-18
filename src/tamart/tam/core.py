@@ -1,8 +1,11 @@
-import os, torch, cv2, subprocess
-import fitz
+import os
+
+import cv2
+import matplotlib.font_manager as fm
 import numpy as np
+import torch
+from PIL import Image, ImageDraw, ImageFont
 from scipy.optimize import minimize_scalar
-from pathlib import Path
 
 
 def rank_guassian_filter(img, kernel_size=3):
@@ -66,166 +69,126 @@ def least_squares(map1, map2):
     return result.x
 
 
-def generate_latex(words, relevances, cmap="bwr", font=r'{18pt}{21pt}'):
-    """
-    Generate LaTeX code to visualize tokens with colored backgrounds or text, based on their relevance scores.
-
-    Args:
-        words (list of str): List of token strings, where tokens starting with '▁' or 'Ġ' represent spaces.
-        relevances (list of float): List of relevance scores corresponding to each token.
-            - relevance >= 0: earlier context tokens, color-coded with a jet colormap.
-            - relevance == -1: current explained token, shown with black background and white text.
-            - relevance == -2: next tokens, rendered in gray color.
-            - relevance == -3: special marker to add a newline and "Candidates:" label.
-            - relevance == -4: special marker to add a newline and print the word string as is.
-        cmap (str): Colormap to use for positive relevances (default "bwr" - unused in current code).
-        font (str): Font size and line spacing in LaTeX format, e.g. '{18pt}{21pt}'.
-
-    Returns:
-        str: A complete LaTeX document as a string with colored tokens visualized.
-    """
-
-
-    latex_code = r'''
-    \documentclass[arwidth=200mm]{standalone}
-    \renewcommand{\normalsize}{\fontsize''' + font + r'''\selectfont}
-    \usepackage[dvipsnames]{xcolor}
-
-    \begin{document}
-    \fbox{
-    \parbox{\textwidth}{
-    \setlength\fboxsep{0pt}
-    '''
-
-    for i in range(len(words)):
-        word = words[i]
-        relevance = relevances[i]
-
-        # relevance >= 0 for earlier context tokens (jet colors)
-        if relevance >= 0:
-            jet_colormap = cv2.applyColorMap(np.arange(256, dtype=np.uint8), cv2.COLORMAP_JET)
-            b, g, r = jet_colormap[int(relevances[i] * 255)][0].tolist()
-            if word[:2] == '$ ' and word[-1] == '$': # candidates
-                latex_code += f' \\textbf{{\\textcolor[RGB]{{{r},{g},{b}}}{{\\strut {word}}}}}, '
-            elif word.startswith('▁') or word.startswith('Ġ') or word.startswith(' '):
-                word = word.replace('▁', ' ').replace('Ġ', ' ')
-                latex_code += f' \\textbf{{\\textcolor[RGB]{{{r},{g},{b}}}{{\\strut {word}}}}}'
-            else:
-                latex_code += f'\\textbf{{\\textcolor[RGB]{{{r},{g},{b}}}{{\\strut {word}}}}}'
-
-        # for current explained token (black)
-        elif relevance == -1:
-            if word.startswith('▁') or word.startswith('Ġ') or word.startswith(' '):
-                word = word.replace('▁', ' ').replace('Ġ', ' ')
-                latex_code += f' \\textbf{{\\colorbox[RGB]{{{0},{0},{0}}}{{\\textcolor[RGB]{{{255},{255},{255}}}{{\\strut {word}}}}}}}'
-            else:
-                latex_code += f'\\textbf{{\\colorbox[RGB]{{{0},{0},{0}}}{{\\textcolor[RGB]{{{255},{255},{255}}}{{\\strut {word}}}}}}}'
-
-        # for next tokens (gray)
-        elif relevance == -2:
-            b, g, r = 200, 200, 200
-            if word.startswith('▁') or word.startswith('Ġ') or word.startswith(' '):
-                word = word.replace('▁', ' ').replace('Ġ', ' ')
-                latex_code += f' \\textbf{{\\textcolor[RGB]{{{r},{g},{b}}}{{\\strut {word}}}}}'
-            else:
-                latex_code += f'\\textbf{{\\textcolor[RGB]{{{r},{g},{b}}}{{\\strut {word}}}}}'
-
-        # for top pred
-        elif relevance == -3:
-            latex_code += '\\\\$Candidates:$'
-
-        # for custom vis str
-        elif relevance == -4:
-            latex_code += '\\\\' + word
-
-    latex_code += r'}}\end{document}'
-
-    return latex_code
-
-
-def compile_latex_to_jpg(latex_code, path='word_colors.pdf', delete_aux_files=True, dpi=500):
-    """
-    Compile a LaTeX string into a JPG image.
-
-    Parameters:
-    - latex_code (str): The LaTeX source code to compile.
-    - path (str or Path): File path for intermediate PDF and auxiliary files. The output image is returned as an array.
-    - delete_aux_files (bool): Whether to delete auxiliary files (.aux, .log, .tex, .pdf) after compilation.
-    - dpi (int): Resolution for the output image in dots per inch.
-
-    Returns:
-    - img (numpy.ndarray): The compiled LaTeX rendered as a color image (BGR) array.
-                          Returns None if compilation fails.
-    """
-
-    path = Path(path)
-    os.makedirs(path.parent, exist_ok=True)
-
-    with open(path.with_suffix(".tex"), 'w') as f:
-        f.write(latex_code)
-
+def _load_bold_font(size):
+    """Load a bold sans-serif TTF (DejaVu Sans ships with matplotlib)."""
     try:
-        res_code = subprocess.run(['xelatex', '--output-directory', path.parent, path.with_suffix(".tex")], \
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
-    except:
-        print('Skip, fail to compile: ' + res_code)
-        return None
-
-    mat = fitz.Matrix(dpi / 72, dpi / 72)
-    page = fitz.open(path.with_suffix(".pdf")).load_page(0)
-    pix = page.get_pixmap(matrix=mat, alpha=False)
-
-    if delete_aux_files:
-        for suffix in ['.aux', '.log', '.tex', '.pdf']:
-            os.remove(path.with_suffix(suffix))
-
-    getpngdata = pix.tobytes("png")
-    image_array = np.frombuffer(getpngdata, dtype=np.uint8)
-    img = cv2.imdecode(image_array, cv2.IMREAD_ANYCOLOR)[:,:,:3]
-    return img
+        font_path = fm.findfont(fm.FontProperties(family='DejaVu Sans', weight='bold'))
+        return ImageFont.truetype(font_path, size)
+    except Exception:
+        return ImageFont.load_default()
 
 
-def vis_text(words, relevances, candidates, candi_scores, vis_token_idx, path='heatmap.jpg', font=r'{18pt}{21pt}'):
+def vis_text(words, relevances, candidates, candi_scores, vis_token_idx,
+             path='heatmap.jpg', font_size=32, img_width=2500):
     """
-    Visualizes text tokens and their relevance scores as a heatmap image using LaTeX.
+    Render the per-token relevance heatmap as a paper-ready image using PIL.
 
-    This function processes a list of words and their corresponding relevance scores, along with candidate tokens 
-    and their scores, to create a color-coded heatmap visualization. It handles special LaTeX characters by escaping 
-    them appropriately to ensure correct LaTeX rendering. The visualization includes the explained tokens, subsequent 
-    tokens, and top prediction candidates with distinct coloring based on their scores.
+    Tokens are laid out left-to-right with word wrap. Score conventions:
+        - relevance >= 0   : earlier context tokens, jet colormap
+        - relevance == -1  : current explained token, white text on black bg
+        - relevance == -2  : next (not-yet-explained) tokens, gray text
+        - relevance == -3  : marker for a newline + a "Candidates:" label
+        - relevance == -4  : marker for a newline + the raw word
+
+    Tokens starting with '▁' / 'Ġ' / ' ' are treated as new words and get a
+    leading space; all other tokens glue to the previous one (subword
+    continuation).
 
     Args:
-        words: All tokens need to visualize.
-        relevances: Relevance scores corresponding to each token.
-        candidates: Candidate tokens (top k predictions).
-        candi_scores: Scores associated with each candidate token.
-        vis_token_idx (int): Index of the token to vis (explain).
-        path (str, optional): File path to save the generated heatmap image. Defaults to 'heatmap.jpg'.
-        font (str, optional): LaTeX font size settings for the visualization. Defaults to r'{18pt}{21pt}'.
+        words: full list of tokens including the current and trailing ones.
+        relevances: per-token relevance scores in [0, 1] for the explained prefix.
+        candidates: top-k predicted candidate tokens for the current step.
+        candi_scores: softmax scores of those candidates.
+        vis_token_idx: index of the token being explained.
+        path: output JPG path (the file is also written to disk).
+        font_size: pixel size of the rendered text.
+        img_width: working canvas width; the caller resizes the result to match
+            the visual map width, so this just controls anti-aliasing quality.
 
     Returns:
-        str: Numpy image for the visualized texts
+        np.ndarray: rendered image as BGR uint8 (cv2 convention).
     """
-
-
-    # add scores (-2, gray) for next tokens after the exaplained one
-    add_scores = []
-    for i in range(len(relevances), len(words[:-1])):
-        add_scores.append(-2)
-
-    # explained tokens + next tokens + top pred candidates (see defination of scores in generate_latex)
+    add_scores = [-2] * (len(words[:-1]) - len(relevances))
     all_scores = relevances.tolist() + add_scores + [-3] + candi_scores.cpu().float().tolist()
     all_scores[vis_token_idx] = -1
-
-    # scores correspond to the words
     all_words = words[:-1] + [''] + ['$ ' + _ + '$' for _ in candidates]
 
-    # replace special texts to fit latex
-    all_words = [_.replace('\\', '\\backslash').replace('\n', '\\newline').replace('_', '\\_').replace('^', '\\^').replace('&', '\\&').replace('%', '\\%').replace('Ċ', '\\newline') for _ in all_words]
+    font = _load_bold_font(font_size)
+    jet = cv2.applyColorMap(np.arange(256, dtype=np.uint8), cv2.COLORMAP_JET)
 
-    # to latex, then to img
-    latex_code = generate_latex(all_words, all_scores, cmap='bwr', font=font)
-    return compile_latex_to_jpg(latex_code, path=path, delete_aux_files=True)
+    spans = []
+    for word, score in zip(all_words, all_scores):
+        if score == -3:
+            spans.append({'newline': True})
+            spans.append({'text': 'Candidates:', 'fg': (0, 0, 0), 'bg': None, 'lead': False})
+            continue
+        if score == -4:
+            spans.append({'newline': True})
+            spans.append({'text': str(word), 'fg': (0, 0, 0), 'bg': None, 'lead': False})
+            continue
+
+        text = str(word)
+        is_candidate = text.startswith('$ ') and text.endswith('$')
+        if is_candidate:
+            text = text[2:-1]
+            lead = True
+        else:
+            lead = text.startswith('▁') or text.startswith('Ġ') or text.startswith(' ')
+            text = text.lstrip('▁Ġ ').replace('Ċ', ' ').replace('\n', ' ')
+        if not text:
+            continue
+
+        if score >= 0:
+            b, g, r = jet[int(score * 255)][0].tolist()
+            spans.append({'text': text, 'fg': (r, g, b), 'bg': None, 'lead': lead})
+            if is_candidate:
+                spans.append({'text': ',', 'fg': (0, 0, 0), 'bg': None, 'lead': False})
+        elif score == -1:
+            spans.append({'text': text, 'fg': (255, 255, 255), 'bg': (0, 0, 0), 'lead': lead})
+        elif score == -2:
+            spans.append({'text': text, 'fg': (200, 200, 200), 'bg': None, 'lead': lead})
+
+    padding = max(10, font_size // 2)
+    line_spacing = int(font_size * 1.4)
+    space_bbox = font.getbbox(' ')
+    space_w = max(1, space_bbox[2] - space_bbox[0])
+
+    lines = [[]]
+    cur_x = padding
+    for span in spans:
+        if span.get('newline'):
+            lines.append([])
+            cur_x = padding
+            continue
+        bbox = font.getbbox(span['text'])
+        w = bbox[2] - bbox[0]
+        lead_w = space_w if (span['lead'] and cur_x > padding) else 0
+        if cur_x + lead_w + w > img_width - padding and cur_x > padding:
+            lines.append([])
+            cur_x = padding
+            lead_w = 0
+        cur_x += lead_w
+        lines[-1].append({**span, 'x': cur_x, 'w': w})
+        cur_x += w
+
+    height = padding * 2 + len(lines) * line_spacing
+    img = Image.new('RGB', (img_width, height), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    ascent, descent = font.getmetrics()
+    text_h = ascent + descent
+
+    for li, line in enumerate(lines):
+        y = padding + li * line_spacing
+        for span in line:
+            if span['bg'] is not None:
+                draw.rectangle([span['x'], y, span['x'] + span['w'], y + text_h], fill=span['bg'])
+            draw.text((span['x'], y), span['text'], font=font, fill=span['fg'])
+
+    arr = np.array(img)[:, :, ::-1].copy()
+    if path:
+        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+        cv2.imwrite(path, arr)
+    return arr
 
 
 def multimodal_process(raw_img, vision_shape, img_scores, txt_scores, txts, candidates, candi_scores, \
@@ -306,15 +269,15 @@ def multimodal_process(raw_img, vision_shape, img_scores, txt_scores, txts, cand
         out_img = [img_map[i] * 0.5 + resized_img[i] * 0.5 for i in range(len(vision_shape))]
         out_img = np.concatenate(out_img, 1)
 
-        # text vis via latex
+        # text vis via PIL
         try:
-            txt_map = vis_text(txts, txt_scores, candidates, candi_scores, vis_token_idx, path=img_save_fn, font=r'{5pt}{6pt}')
-        except:
-            print('Skip text visualization, please check the installation of texlive-xetex.')
+            txt_map = vis_text(txts, txt_scores, candidates, candi_scores, vis_token_idx, path=img_save_fn, font_size=14)
+        except Exception as e:
+            print(f'Skip text visualization: {e}')
             return out_img, img_map
-        
+
         if not isinstance(txt_map, np.ndarray):
-            print('Skip txt visualization, please check weather the text special character compatible with LaTeX.')
+            print('Skip text visualization: renderer returned no image.')
             return out_img, img_map
 
         # concat multimodal vis
@@ -345,15 +308,15 @@ def multimodal_process(raw_img, vision_shape, img_scores, txt_scores, txts, cand
             raw_img = cv2.resize(raw_img, (w, h))
         out_img = img_map * 0.5 + raw_img * 0.5
 
-        # vis text via latex
+        # vis text via PIL
         try:
             txt_map = vis_text(txts, txt_scores, candidates, candi_scores, vis_token_idx, path=img_save_fn)
-        except:
-            print('Skip text visualization, please check the installation of texlive-xetex.')
+        except Exception as e:
+            print(f'Skip text visualization: {e}')
             return out_img, img_scores
 
         if not isinstance(txt_map, np.ndarray):
-            print('Skip txt visualization, please check weather the text special character compatible with LaTeX.')
+            print('Skip text visualization: renderer returned no image.')
             return out_img, img_scores
 
         txt_map = cv2.resize(txt_map, (w, int(float(txt_map.shape[0]) / float(txt_map.shape[1]) * w)))
@@ -381,15 +344,15 @@ def multimodal_process(raw_img, vision_shape, img_scores, txt_scores, txts, cand
         out_img = [img_map[i] * 0.5 + raw_img[i] * 0.5 for i in range(b)]
         out_img = np.concatenate(out_img, 1)
 
-        # vis text via latex
+        # vis text via PIL
         try:
-            txt_map = vis_text(txts, txt_scores, candidates, candi_scores, vis_token_idx, path=img_save_fn, font=r'{5pt}{6pt}')
-        except:
-            print('Skip text visualization, please check the installation of texlive-xetex.')
+            txt_map = vis_text(txts, txt_scores, candidates, candi_scores, vis_token_idx, path=img_save_fn, font_size=14)
+        except Exception as e:
+            print(f'Skip text visualization: {e}')
             return out_img, img_scores
 
         if not isinstance(txt_map, np.ndarray):
-            print('Skip txt visualization, please check weather the text special character compatible with LaTeX.')
+            print('Skip text visualization: renderer returned no image.')
             return out_img, img_scores
 
         txt_map = cv2.resize(txt_map, (int(w * b), int(float(txt_map.shape[0]) / float(txt_map.shape[1]) * w * b)))
@@ -438,7 +401,7 @@ def id2idx(inp_id, target_id, return_last=False):
 
 
 def TAM(tokens, vision_shape, logit_list, special_ids, vision_input, \
-        processor, save_fn, target_token, img_scores_list, eval_only=False):
+        processor, save_fn, target_token, img_scores_list, eval_only=False, stats=None):
 
     """
     Generate a Token Activation Map (TAM) with optional Estimated Causal Inference (ECI) 
@@ -528,8 +491,9 @@ def TAM(tokens, vision_shape, logit_list, special_ids, vision_input, \
     if round_idx == 0 and isinstance(target_token, int):
         for t in range(len(prompt) + 1):
             # recursion to process prompt tokens
+            inner_stats = stats if (stats is not None and t == 0) else None
             img_map = TAM(tokens, vision_shape, logit_list, special_ids, vision_input, processor, \
-                          save_fn if t == len(prompt) else '', [0, t], img_scores_list, eval_only)
+                          save_fn if t == len(prompt) else '', [0, t], img_scores_list, eval_only, inner_stats)
 
             ## the first prompt token is used to reflect the differenec of activation degrees
             if t == 0:
@@ -591,6 +555,13 @@ def TAM(tokens, vision_shape, logit_list, special_ids, vision_input, \
         # apply ECI with the least squares method and relu
         scaled_map = least_squares(img_scores, interf_img_scores)
         img_scores = (img_scores - interf_img_scores * scaled_map).clip(min=0)
+
+    # raw modality contribution (post-ECI, pre joint min-max). Useful for
+    # diagnosing dim-looking maps that nonetheless have lots of total
+    # attention — see TAMExplainer.explain_interactive.
+    if stats is not None:
+        stats['img_sum'] = float(img_scores.sum())
+        stats['txt_sum'] = float(txt_scores.sum())
 
     # prepare raw vision input
     if isinstance(vision_shape[0], tuple):
