@@ -10,4 +10,6 @@ wheels/
 .venv
 /data
 .vscode
+/launches/
+/out/
 

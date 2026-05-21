@@ -3,26 +3,40 @@ name = "tamart"
 version = "0.1.0"
 description = "Token Activation Map (TAM) explainability for Multimodal LLMs"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "accelerate>=1.13.0",
+    "click>=8.1.0",
     "fitz>=0.0.1.dev2",
+    "flash-attn ; python_full_version < '3.14' and sys_platform == 'linux'",
     "ipykernel>=7.2.0",
     "ipywidgets>=8.1.8",
     "matplotlib>=3.10.9",
     "nltk>=3.9.4",
-    "numpy>=2.4.4",
+    # capped <2.3: vllm 0.16.0 pins numba==0.61.2 which requires numpy<2.3.
+    "numpy>=2.0,<2.3",
     "opencv-python>=4.13.0.92",
     "pathlib>=1.0.1",
     "pymupdf>=1.27.2.3",
     "python-dotenv>=1.0.0",
+    "requests>=2.28.0",
     "rouge>=1.0.1",
+    "safetensors>=0.7.0",
     "scipy>=1.17.1",
     "torch==2.9.1",
     "torchaudio==2.9.1",
     "torchvision==0.24.1",
-    "transformers==4.52.1",
+    "tqdm>=4.65.0",
+    # transformers bumped from 4.52.1: vllm 0.16.0 requires >=4.56.0.
+    "transformers>=4.56.0,<5",
+    # vllm 0.16.0 is the newest release still pinned to torch==2.9.1, so it
+    # coexists with the torch/flash-attn stack above. linux-only (no win/mac
+    # wheels). Bumping torch would break the cu126 flash-attn wheel.
+    "vllm==0.16.0 ; sys_platform == 'linux'",
 ]
+
+[project.scripts]
+tamart-download-paintings = "tamart.data.download:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -35,7 +49,12 @@ packages = ["src/tamart"]
 torch = { index = "pytorch-cu126" }
 torchvision = { index = "pytorch-cu126" }
 torchaudio = { index = "pytorch-cu126" }
+flash-attn = { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.0/flash_attn-2.8.3%2Bcu126torch2.9-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl" }
 
 [[tool.uv.index]]
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
+# explicit: only used by packages that opt in via [tool.uv.sources] (torch,
+# torchvision, torchaudio). Otherwise it shadows PyPI for shared deps like
+# setuptools and breaks vllm's resolution.
+explicit = true
