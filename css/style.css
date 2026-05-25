@@ -32,7 +32,14 @@ em{font-style:italic; color:#f0d9b8}
 .eyebrow{letter-spacing:.14em; text-transform:uppercase; font-size:.72rem; color:var(--mut); margin:0 0 14px; font-weight:600}
 .hero h1{font-size:clamp(2rem,5vw,3.4rem); margin:0}
 .hero h1 .sub{color:var(--mut)}
-.authors{color:var(--mut); margin:.6em 0 0; font-style:italic}
+.authors{color:var(--ink); margin:.7em 0 .2em; max-width:760px; font-size:1.02rem}
+.authors sup{color:var(--accent); font-weight:600}
+.affil{color:var(--mut); margin:0 0 18px; font-size:.86rem}
+.affil sup{color:var(--accent)}
+.paper-links{display:flex; gap:10px; flex-wrap:wrap; margin:0 0 30px}
+.btn.icon{display:inline-flex; align-items:center; gap:8px}
+.btn.icon svg{display:block}
+.btn.disabled{opacity:.5; cursor:not-allowed; pointer-events:none}
 .tldr{
   display:flex; gap:16px; align-items:flex-start;
   margin:34px 0 26px; padding:20px 22px; max-width:780px;
