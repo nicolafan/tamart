@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Understanding How MLLMs Describe Artworks &mdash; Token Activation Maps</title>
+<meta name="description" content="A token-level view of how multimodal LLMs see the art they describe, using Token Activation Maps (TAM)." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Explainable AI &middot; Multimodal LLMs &middot; Art Understanding</p>
+    <h1>Understanding How MLLMs Describe Artworks<br/><span class="sub">Using Token Activation Maps</span></h1>
+    <p class="authors">Anonymous Authors &middot; Anonymous Affiliations</p>
+
+    <div class="tldr">
+      <span class="tldr-tag">TL;DR</span>
+      <p>
+        When a multimodal LLM describes a painting, <em>where</em> on the canvas is each
+        word actually grounded? We trace every generated token back to the image with
+        <strong>Token Activation Maps</strong>. Concrete subjects and named figures
+        localize to a region; style and emotion spread diffusely across the whole canvas;
+        metadata sits in between. Models name the <em>artist</em> far more reliably than the
+        <em>title</em> &mdash; and the maps hint at why. Explore it yourself below.
+      </p>
+    </div>
+
+    <div class="hero-cta">
+      <a class="btn" href="#explore">Explore the maps &darr;</a>
+      <a class="btn ghost" href="#how">How it works</a>
+    </div>
+  </div>
+</header>
+
+<!-- ====================== INTERACTIVE EXPLORER ====================== -->
+<section id="explore" class="explore">
+  <div class="wrap">
+    <h2>Explore the maps</h2>
+    <p class="lede">
+      Pick a painting, then <strong>click any highlighted phrase</strong> in the caption to
+      see the image region the model drew on. For concrete objects and named figures you can
+      overlay the <strong>SAM&nbsp;3</strong> segmentation and an <strong>Otsu-thresholded</strong>
+      version of the map to compare.
+    </p>
+
+    <div id="explorer" class="explorer">
+      <!-- left: caption + controls -->
+      <div class="panel caption-panel">
+        <div class="now-playing">
+          <div class="np-text">
+            <strong id="np-title">&nbsp;</strong>
+            <span id="np-artist"></span>
+          </div>
+          <button id="pick-btn" class="btn small">Change painting</button>
+        </div>
+
+        <div id="legend" class="legend"></div>
+
+        <div id="caption" class="caption" aria-live="polite"></div>
+
+        <div class="hint" id="span-hint">Click a coloured phrase above &uarr;</div>
+      </div>
+
+      <!-- right: image + overlays -->
+      <div class="panel image-panel">
+        <div id="stage" class="stage">
+          <img id="painting" alt="" />
+          <canvas id="overlay"></canvas>
+        </div>
+
+        <div class="controls">
+          <label class="ctl"><input type="checkbox" id="t-tam" checked /> <span class="sw tam"></span> TAM heatmap</label>
+          <label class="ctl"><input type="checkbox" id="t-otsu" /> <span class="sw otsu"></span> Otsu threshold</label>
+          <label class="ctl" id="ctl-sam"><input type="checkbox" id="t-sam" /> <span class="sw sam"></span> SAM&nbsp;3 mask</label>
+          <label class="ctl slider">Opacity <input type="range" id="alpha" min="20" max="100" value="80" /></label>
+        </div>
+        <div id="sam-note" class="sam-note"></div>
+
+        <div id="meta-card" class="meta-card"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- painting picker modal -->
+<div id="picker" class="picker hidden">
+  <div class="picker-box">
+    <div class="picker-head">
+      <input type="text" id="search" placeholder="Search title or artist&hellip;" />
+      <div id="filters" class="filters"></div>
+      <button id="picker-close" class="btn small ghost">Close</button>
+    </div>
+    <div id="grid" class="grid"></div>
+  </div>
+</div>
+
+<!-- ====================== ABSTRACT ====================== -->
+<section class="abstract">
+  <div class="wrap narrow">
+    <h2>Abstract</h2>
+    <p>
+      Multimodal Large Language Models (MLLMs) describe artworks with remarkable fluency, yet
+      the visual reasoning behind their outputs remains opaque. When an MLLM names a style,
+      identifies a subject, or recognizes an iconographic symbol, does it ground each claim in
+      the relevant region of the canvas, draw on an undifferentiated visual signal, or rely
+      primarily on textual priors? We study this using the <strong>Token Activation Map (TAM)</strong>,
+      which produces, for each generated token, a heatmap isolating the visual evidence specific
+      to that token from prior-context interference. Applying TAM to a curated set of paintings
+      spanning multiple periods and genres, we analyze grounding patterns across five semantically
+      distinct token categories: common visual objects, style descriptors, metadata, iconographic
+      tokens, and affective expressions. We find that visual grounding varies substantially with
+      token semantics. We further show that MLLMs attempt to identify artworks and artists,
+      achieving higher accuracy in artist attribution than in title prediction, where
+      hallucinations are more frequent. Finally, we compare TAM with SAM&nbsp;3 open-vocabulary
+      segmentation.
+    </p>
+  </div>
+</section>
+
+<!-- ====================== HOW IT WORKS ====================== -->
+<section id="how" class="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="lede">A four-stage pipeline turns a painting into a set of semantically typed
+       activation maps.</p>
+
+    <ol class="phases">
+      <li>
+        <span class="num">1</span>
+        <h3>Describe</h3>
+        <p>We draw the 1,000 most-viewed paintings from WikiArt and prompt
+           <strong>Qwen2-VL-2B-Instruct</strong> with <em>&ldquo;Describe the content and style of this
+           image.&rdquo;</em> The model autoregressively writes a caption, token by token.</p>
+      </li>
+      <li>
+        <span class="num">2</span>
+        <h3>Token Activation Maps</h3>
+        <p>For every generated token, <strong>TAM</strong> recovers a heatmap of the image regions it
+           draws on &mdash; subtracting interference from earlier context tokens so the map isolates
+           that token's own evidence.</p>
+      </li>
+      <li>
+        <span class="num">3</span>
+        <h3>Classify spans</h3>
+        <p>A text LLM labels caption spans into five categories &mdash;
+           <span class="chip CVO">CVO</span> <span class="chip ICON">ICON</span>
+           <span class="chip STYLE">STYLE</span> <span class="chip AFFECT">AFFECT</span>
+           <span class="chip META">META</span> &mdash; concrete objects, named figures, painterly
+           style, mood, and metadata.</p>
+      </li>
+      <li>
+        <span class="num">4</span>
+        <h3>Aggregate &amp; analyze</h3>
+        <p>Per-token maps are averaged into one map per span. We measure how localized each map is,
+           grade title/artist predictions against ground truth, and compare maps to
+           <strong>SAM&nbsp;3</strong> segmentations.</p>
+      </li>
+    </ol>
+
+    <div class="findings">
+      <div class="finding">
+        <h4>Grounding follows meaning</h4>
+        <p>Concrete objects (<span class="chip CVO">CVO</span>) and named figures
+           (<span class="chip ICON">ICON</span>) localize tightly; style
+           (<span class="chip STYLE">STYLE</span>) and affect
+           (<span class="chip AFFECT">AFFECT</span>) spread across the whole canvas.</p>
+      </div>
+      <div class="finding">
+        <h4>Artist &gt; title</h4>
+        <p>The model names the artist correctly far more often than the title
+           (&approx;&nbsp;82% vs. 28%). Wrong predictions lean more on text than on the image.</p>
+      </div>
+      <div class="finding">
+        <h4>Maps as a free detector</h4>
+        <p>Repurposed as an open-vocabulary detector, TAM gives coarse but semantically plausible
+           regions &mdash; complementary to a dedicated segmenter like SAM&nbsp;3.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wrap">
+    <p>Token Activation Maps build on Li&nbsp;et&nbsp;al., <em>Token activation map to visually explain
+       multimodal LLMs</em> (ICCV 2025). Backbone: Qwen2-VL-2B-Instruct. Segmentation reference: SAM&nbsp;3.</p>
+    <p class="muted">Project page for the paper &ldquo;Understanding How MLLMs Describe Artworks Using Token Activation Maps.&rdquo;</p>
+  </div>
+</footer>
+
+<script src="js/app.js"></script>
+</body>
+</html>
