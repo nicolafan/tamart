@@ -7,9 +7,11 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv*
 /data
 .vscode
-/launches/
 /out/
+
+# Local agent/editor state
+.claude/
 
