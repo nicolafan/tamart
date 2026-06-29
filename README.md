@@ -3,7 +3,9 @@
 This is the official code repository for the paper **"Understanding How MLLMs
 Describe Artworks Using Token Activation Maps."**
 
-> 📝 **Status: under review.**
+> 📝 **Status: accepted at the [PRESTIGE workshop](https://sites.google.com/view/prestige-icpr2026) at [ICPR 2026](https://icpr2026.org/).**
+>
+> 📄 **Paper: [arXiv:2606.27947](https://arxiv.org/abs/2606.27947)**
 
 We use **Token Activation Maps (TAM)** ([ICCV 2025 Oral](https://arxiv.org/abs/2506.23270))
 — a method that visualizes the image evidence behind *every word* a Multimodal
@@ -357,14 +359,16 @@ examples/         — standalone TAM demo & eval scripts
 
 ## Citation
 
-If you use this code, please cite our paper (citation to be updated upon
-publication):
+If you use this code, please cite our paper:
 
 ```bibtex
 @misc{tamart,
-  title  = {Understanding How MLLMs Describe Artworks Using Token Activation Maps},
-  note   = {Under review},
-  year   = {2026}
+  title         = {Understanding How MLLMs Describe Artworks Using Token Activation Maps},
+  note          = {Accepted at the PRESTIGE workshop at ICPR 2026},
+  year          = {2026},
+  eprint        = {2606.27947},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2606.27947}
 }
 ```
 
